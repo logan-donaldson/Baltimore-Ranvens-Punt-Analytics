@@ -1,0 +1,407 @@
+---
+title: "Ravens Punt Project"
+author: "Logan Donaldson"
+date: "4/6/2021"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(faraway)
+library(readxl)
+library(ggplot2)
+puntOrig <- read_excel("C:\\Users\\tropi\\Downloads\\Ravens Project\\punt_appended.xlsx", na = "NA")
+
+
+puntOrig <- subset(puntOrig, !is.na(return_yards))
+puntOrig$penalty_yards[is.na(puntOrig$penalty_yards)] <- 0
+puntOrig$punt_rush_count[is.na(puntOrig$punt_rush_count)] <- 0
+puntNoPenalty <- subset(puntOrig, penalty_yards == 0)
+puntPenalty <- subset(puntOrig, penalty_yards != 0)
+nrow(puntOrig)
+```
+
+In the above code we load the punt_appended data set which is a subset of the total data set which contains only punts. A few extra fields were also added to aid in our analysis. After loading we remove all punts which did not have an attempted return. We also assign a value of 0 for the penalty_yards field for plays which did not have a penalty. Likewise we assign a value of 0 to the punt_rush_count field for plays which did not have any punt rushers. Lastly, we bucket the punt returns into plays with a penalty and plays without.
+
+```{r}
+lmod<-lm(return_yards ~ clock_truncated + hash_R + hash_C + clean_catch_binary + actual_kick_direction_R + actual_kick_direction_C + kick_type_NORMAL + return_direction_R + return_direction_C + hang_time + quarter + field_position_pos + off_score + def_score + score_differential + garbage_time + kick_depth + kick_width_neg + kick_yards + punt_rush_count + fumble + gunners_count + vise_count, puntNoPenalty)
+
+summary(lmod)
+
+finalLmod<-lm(return_yards ~ clean_catch_binary + actual_kick_direction_R + actual_kick_direction_C + return_direction_R + return_direction_C + kick_width_neg + hang_time + kick_depth + vise_count, puntNoPenalty)
+summary(finalLmod)
+
+anova(finalLmod, lmod)
+lmod <- finalLmod
+```
+
+Above we perform a linear regression analysis on the punt returns without a penalty. Return_yards is the response variable. Through this regression we hope to better understand not only what factors contribute to long punt returns but the degree to which they can be used to accurately predict the outcome of a punt return. We start by regressing on the majority of variables in the data set and then remove the non-significant predictors. There removal is justified by the large p-value in the ANOVA test.
+
+The near zero p-value associated with the regression suggests that there is indeed a relationship between the predictors and return_yards. However, a Multiple R-squared value of 0.1262 implies that there remains a large amount of variance in the data that is unaccounted for by the regression. In other words, the predictors certainly tell part of the story but not all of it.
+
+Note that kick_width_neg is a transformation of the kick_width data field which changes the data to a (-26,26) scale to make it more usable for regression.
+
+```{r}
+lmods<-lm(return_yards ~ clock_truncated + hash_R + hash_C + clean_catch_binary + actual_kick_direction_R + actual_kick_direction_C + kick_type_NORMAL + return_direction_R + return_direction_C + hang_time + quarter + field_position_pos + off_score + def_score + score_differential + garbage_time + kick_depth + kick_width_neg + kick_yards + punt_rush_count + fumble + gunners_count + vise_count, puntPenalty)
+summary(lmods)
+
+finalLmod<-lm(return_yards ~ hash_R + hash_C + clean_catch_binary + hang_time + kick_depth, puntPenalty)
+summary(finalLmod)
+
+anova(finalLmod,lmods)
+```
+
+The process as described previously is applied to the punt returns which did have penalties. Interestingly, the significant predictors differ.
+
+```{r}
+lmodVise <- lm(vise_count ~ field_position_pos, puntNoPenalty)
+summary(lmodVise)
+plot(puntNoPenalty$field_position_pos, puntNoPenalty$vise_count, xlab = "Field Position", ylab = "Vise Count")
+abline(lmodVise)
+
+lmodVise <- lm(vise_count ~ field_position_pos, puntPenalty)
+summary(lmodVise)
+plot(puntPenalty$field_position_pos, puntPenalty$vise_count, xlab = "Field Position", ylab = "Vise Count")
+abline(lmodVise)
+```
+
+Having vise_count as a predictor in our model could be considered cumbersome and unintuitive. Thus, in the above code we check to see if vise_count is strongly correlated with field_position_pos and whether this correlation means that we can drop vise_count from the regression. We see that there is indeed a correlation between the two variables. However, in code not shown here, it was revealed that dropping vise_count from the regression would nonetheless significantly reduce the model's effectiveness at predicting return_yards.
+
+We now turn to checking the validity of the assumptions inherent to all linear regression. Namely, that the residuals have constant variance, are normally distributed, and the observations are not correlated.
+
+For the remainder of the analysis we focus on the punt returns without penalties.
+
+```{r}
+plot(fitted(lmod), residuals(lmod), xlab = "Fitted yhat Values", ylab = "Residuals")
+var.test(residuals(lmod)[fitted(lmod)>10], residuals(lmod)[fitted(lmod) < 10])
+```
+
+Here we check if the residuals have non-constant variance. we find that they do and we will attempt to address this through remidial measures later.
+
+```{r}
+qqnorm(residuals(lmod), ylab="Residuals", main="")
+qqline(residuals(lmod))
+shapiro.test(residuals(lmod))
+```
+
+Here we check if the residuals are normally distributed but they are clearly not. Again we will attempt to address this later through remidial measures.
+
+```{r}
+n<-length(residuals(lmod))
+plot(tail(residuals(lmod), n-1) ~ head(residuals(lmod),n-1), xlab = expression(hat(epsilon)[i]), ylab = expression(hat(epsilon)[i+1]))
+library(lmtest)
+dwtest(return_yards ~ clean_catch_binary + actual_kick_direction_R + actual_kick_direction_C + return_direction_R + return_direction_C + kick_width_neg + hang_time + kick_depth + vise_count, data=puntNoPenalty)
+```
+
+Here we check if the data is serially correlated and find with a Durbin-Watson test that it is not.
+
+We now turn to finding individual points whose removal could substantially improve the model.
+
+```{r}
+hatv<-hatvalues(lmod)
+halfnorm(hatv, 2, labs = row.names(puntNoPenalty), ylab = "Leverages")
+```
+
+Above we look for high leverage points which are points which are extreme in the space of the predictor variables. In a two-dimensional regression high leverage points which were either far to the left or right on the x-axis. The two punts with highest leverage are labeled with their row number in the data set.
+
+```{r}
+stud <- rstudent(lmod)
+crit <- -1*qt(.05/(2420*2), 2420-5-1)
+stud<-stud[abs(stud)>crit]
+stud
+```
+
+Above we look for outliers which are points with a relatively large residual. Due to the low Multiple R-squared value we have a large number of outliers. Each outlier is labeled with the punt's row number and the associated studentized residual.
+
+```{r}
+cook <- cooks.distance(lmod)
+halfnorm(cook,1,labs=row.names(puntNoPenalty),ylab="Cook’s distances")
+```
+
+Above we look for influential points which are points whose inclusion results in large changes in the coefficients associated with the predictor variables. We see that there is one influential point of note.
+
+```{r}
+plot(dfbeta(lmod)[,2],ylab="Change in clean_catch_binary Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,2]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,3],ylab="Change in actual_kick_direction_R Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,3]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,4],ylab="Change in actual_kick_direction_C Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,4]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,5],ylab="Change in return_direction_R Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,5]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,6],ylab="Change in return_direction_C Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,6]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,7],ylab="Change in kick_width_neg Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,7]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,8],ylab="Change in hang_time Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,8]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,9],ylab="Change in kick_depth Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,9]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,10],ylab="Change in vice_count Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,10]
+influential[which.max(abs(influential))]
+```
+
+Above we take a more granular look at influential points by graphing the change each point has on each coefficient individually. We see that that the inclusion of punt number 1581 and 2107 result in relatively large difference in each coefficient so we can improve the model significantly by removing them which we do below.
+
+```{r}
+lmodu<-lm(return_yards ~ clean_catch_binary + actual_kick_direction_R + actual_kick_direction_C + return_direction_R + return_direction_C + kick_width_neg + hang_time + kick_depth + vise_count, puntNoPenalty, subset=(row.names(puntNoPenalty)!="2107" & row.names(puntNoPenalty)!="1581"))
+summary(lmodu)
+```
+
+Above is the regression with the two influential points removed. Notice the increase in the Multiple-R squared value. 
+
+```{r}
+min(puntNoPenalty$return_yards)
+lmodu<-lm(1/(return_yards-(-1+min(puntNoPenalty$return_yards))) ~ clean_catch_binary + actual_kick_direction_R + actual_kick_direction_C + return_direction_R + return_direction_C + kick_width_neg + hang_time + kick_depth + vise_count, puntNoPenalty, subset=(row.names(puntNoPenalty)!="2107" & row.names(puntNoPenalty)!="1581") & row.names(puntNoPenalty)!="225", na.action = na.exclude)
+summary(lmodu)
+
+plot(fitted(lmodu), residuals(lmodu), xlab = "Fitted yhat Values", ylab = "Residuals")
+var.test(residuals(lmodu)[fitted(lmod)>0.045], residuals(lmodu)[fitted(lmod) < 0.045])
+```
+
+Above we apply a transformation to the response variable return_yards. Namely, we now regress on 1/(return_yards+15) where we add 15 to translate the data so that all punt_returns are in positive yardage. The minimum return_yards was -14 so adding 15 is sufficient. This transformation eliminates the non-constant variance of the residuals which we detected previously. On one hand the improves the fit, but also makes the model less intuitive. The value of this tradeoff is left to the discretion of the model user.
+
+```{r}
+qqnorm(residuals(lmodu), ylab="Residuals", main="")
+qqline(residuals(lmodu))
+shapiro.test(residuals(lmodu))
+```
+
+As seen above the transformation also makes the residuals more closely follow a normal distribution, though not as closely as we would have liked.
+
+```{r}
+n<-length(residuals(lmodu))
+plot(tail(residuals(lmodu), n-1) ~ head(residuals(lmod),n-1), xlab = expression(hat(epsilon)[i]), ylab = expression(hat(epsilon)[i+1]))
+library(lmtest)
+dwtest(return_yards ~ hang_time + kick_depth + kick_yards + vise_count + field_position_pos, data=puntNoPenalty)
+```
+
+Lastly, we again check if the observations remain uncorrelated and indeed that is the case.
+
+Future Directions: Using this model to grade punt returners. Summing a returner's residuals could serve as an alternative metric to average return yards.
+
+```{r}
+puntNoPenalty <- puntNoPenalty[-c(2107, 1581, 225), ]
+puntNoPenalty$residuals <- residuals(lmodu)
+unique<-unique(puntNoPenalty$offense_team_id)
+
+puntNoPenalty<-subset(puntNoPenalty, (!is.na(residuals)) & (!is.na(defense_team_id)))
+
+ggplot(puntNoPenalty, aes(x = residuals)) +
+  geom_histogram(fill = "white", colour = "black", bins = 10) +
+  facet_wrap(offense_team_id ~ .)
+```
+
+We now look at the residuals for each team's offensive unit. If one team in particular had a devised a strategy which allowed them to consistently outperform the model we would expect the corresponding histogram to be skewed left. However, this is not the case as all the histograms are approximately normally distributed. This observation is confirmed via the scatterplot for each team's mean residual below.
+```{r}
+mean <- tapply(puntNoPenalty$residuals, puntNoPenalty$offense_team_id, mean)
+plot(mean)
+```
+
+Below we performed the same analysis on each team's defensive unit. This time we were interested in determining whether one team had devised a strategy to routinely stop punt returners short of their expected return length. Again, this was not the case.
+
+```{r}
+ggplot(puntNoPenalty, aes(x = residuals)) +
+  geom_histogram(fill = "white", colour = "black", bins = 10) +
+  facet_wrap(defense_team_id ~ .)
+
+mean <- tapply(puntNoPenalty$residuals, puntNoPenalty$defense_team_id, mean)
+plot(mean)
+```
+
+Now we attempt to create a universal model, one that predicts the length of a punt return on plays with and without penalty.
+```{r}
+lmodAll<-lm(return_yards ~ clock_truncated + hash_R + hash_C + clean_catch_binary + actual_kick_direction_R + actual_kick_direction_C + kick_type_NORMAL + return_direction_R + return_direction_C + hang_time + quarter + field_position_pos + off_score + def_score + score_differential + garbage_time + kick_depth + kick_width_neg + kick_yards + punt_rush_count + fumble + gunners_count + vise_count + penalty_offensive + penalty_defensive, puntOrig)
+summary(lmodAll)
+
+finalLmodAll<-lm(return_yards ~ clean_catch_binary + actual_kick_direction_R + actual_kick_direction_C + return_direction_R + return_direction_C + hang_time + kick_depth + vise_count + penalty_offensive + penalty_defensive, puntOrig)
+summary(finalLmodAll)
+
+anova(finalLmodAll, lmodAll)
+lmod <- finalLmodAll
+```
+
+After the reducing the model to only the significant predictors we are left with our final model labeled finalLmodAll above. Below we check the validity of our inherent assumptions reharding linear regression and remove influential points/outliers just as we had previously done.
+
+```{r}
+plot(fitted(lmod), residuals(lmod), xlab = "Fitted yhat Values", ylab = "Residuals")
+var.test(residuals(lmod)[fitted(lmod)>9], residuals(lmod)[fitted(lmod)<9])
+
+qqnorm(residuals(lmod), ylab="Residuals", main="")
+qqline(residuals(lmod))
+shapiro.test(residuals(lmod))
+
+n<-length(residuals(lmod))
+plot(tail(residuals(lmod), n-1) ~ head(residuals(lmod),n-1), xlab = expression(hat(epsilon)[i]), ylab = expression(hat(epsilon)[i+1]))
+library(lmtest)
+dwtest(return_yards ~ clean_catch_binary + actual_kick_direction_R + actual_kick_direction_C + return_direction_R + return_direction_C + hang_time + kick_depth + vise_count + penalty_offensive + penalty_defensive, data=puntOrig)
+
+hatv<-hatvalues(lmod)
+halfnorm(hatv, 2, labs = row.names(puntOrig), ylab = "Leverages")
+
+stud <- rstudent(lmod)
+crit <- -1*qt(.05/(2988*2), 2988-10-1)
+stud<-stud[abs(stud)>crit]
+stud
+
+cook <- cooks.distance(lmod)
+halfnorm(cook,1,labs=row.names(puntOrig),ylab="Cook’s distances")
+
+plot(dfbeta(lmod)[,2],ylab="Change in clean_catch_binary Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,2]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,3],ylab="Change in actual_kick_direction_R Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,3]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,4],ylab="Change in actual_kick_direction_C Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,4]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,5],ylab="Change in return_direction_R Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,5]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,6],ylab="Change in return_direction_C Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,6]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,7],ylab="Change in hang_time Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,7]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,8],ylab="Change in kick_depth Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,8]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,9],ylab="Change in vice_count Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,9]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,10],ylab="Change in penalty_offensive Coef")
+abline(h=0)
+
+influential <- dfbeta(lmod)[,10]
+influential[which.max(abs(influential))]
+
+plot(dfbeta(lmod)[,11],ylab="Change in penalty_defensive Coef")
+abline(h=0)
+
+influential <- sort(dfbeta(lmod)[,11], decreasing = F)
+tail(influential, 1)                          
+head(tail(influential, 2),1)
+
+finalLmodAllu<-lm(return_yards ~ clean_catch_binary + actual_kick_direction_R + actual_kick_direction_C + return_direction_R + return_direction_C + hang_time + kick_depth + vise_count + penalty_offensive + penalty_defensive, puntOrig, subset=(row.names(puntOrig)!="1979" & row.names(puntOrig)!="2627" & row.names(puntOrig)!="355" & row.names(puntOrig)!="270" & row.names(puntOrig)!="282" ))
+summary(finalLmodAllu)
+```
+
+After the tests and removing outliars/influential points we are left with the model above.
+```{r}
+min(puntOrig$return_yards)
+finalLmodAllu<-lm(1/(return_yards-(-1+min(puntOrig$return_yards))) ~ clean_catch_binary + actual_kick_direction_R + actual_kick_direction_C + return_direction_R + return_direction_C + hang_time + kick_depth + vise_count + penalty_offensive + penalty_defensive, puntOrig, subset=(row.names(puntOrig)!="1979" & row.names(puntOrig)!="2627" & row.names(puntOrig)!="355" & row.names(puntOrig)!="270" & row.names(puntOrig)!="282" & row.names(puntOrig)!="298"), na.action = na.exclude)
+summary(finalLmodAllu)
+
+lmodu<-finalLmodAllu
+```
+
+We then perform a transformation similar to the ones we had already done. With the new tranformation we check out assumptions again, just as we had done previously.
+
+```{r}
+
+residuals(lmodu)[which.max(abs(residuals(lmodu)))]
+plot(fitted(lmodu), residuals(lmodu), xlab = "Fitted yhat Values", ylab = "Residuals")
+var.test(residuals(lmodu)[fitted(lmod)>0.0475], residuals(lmodu)[fitted(lmod) < 0.0475])
+
+qqnorm(residuals(lmodu), ylab="Residuals", main="")
+qqline(residuals(lmodu))
+shapiro.test(residuals(lmodu))
+
+n<-length(residuals(lmodu))
+plot(tail(residuals(lmodu), n-1) ~ head(residuals(lmodu),n-1), xlab = expression(hat(epsilon)[i]), ylab = expression(hat(epsilon)[i+1]))
+library(lmtest)
+dwtest((1/(return_yards-(-1+min(puntOrig$return_yards)))) ~ clean_catch_binary + actual_kick_direction_R + actual_kick_direction_C + return_direction_R + return_direction_C + hang_time + kick_depth + vise_count + penalty_offensive + penalty_defensive, data=puntOrig)
+
+puntOrig <- puntOrig[-c(1979, 2627, 355, 270, 282, 298) ,]
+puntOrig$residuals <- residuals(lmodu)
+unique<-unique(puntOrig$offense_team_id)
+puntOrig<-subset(puntOrig, (!is.na(residuals)) & (!is.na(defense_team_id)))
+
+```
+
+We now look at the same sets of histograms but this time with the combined penalty/no penalty model and reach the same conclusions. No team performs significantly better or worse then others on punt returns in the NFL.
+
+```{r}
+ggplot(puntOrig, aes(x = residuals)) +
+  geom_histogram(fill = "white", colour = "black", bins = 10) +
+  facet_wrap(offense_team_id ~ .)
+
+mean <- tapply(puntOrig$residuals, puntOrig$offense_team_id, mean)
+plot(mean)
+
+ggplot(puntOrig, aes(x = residuals)) +
+  geom_histogram(fill = "white", colour = "black", bins = 10) +
+  facet_wrap(defense_team_id ~ .)
+
+mean <- tapply(puntOrig$residuals, puntOrig$defense_team_id, mean)
+plot(mean)
+```
+
+
