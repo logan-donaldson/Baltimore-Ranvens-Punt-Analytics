@@ -41,9 +41,9 @@ anova(finalLmod, lmod)
 lmod <- finalLmod
 ```
 
-Above we perform a linear regression analysis on the punt returns without a penalty. Return_yards is the response variable. Through this regression we hope to better understand not only what factors contribute to long punt returns but the degree to which they can be used to accurately predict the outcome of a punt return. We start by regressing on the majority of variables in the data set and then remove the non-significant predictors. There removal is justified by the large p-value in the ANOVA test.
+Above we perform a linear regression analysis on the punt returns without a penalty. Return_yards is the response variable. Through this regression we hope to better understand not only what factors contribute to long punt returns, but the degree to which they can be used to accurately predict the outcome of a punt return. We start by regressing on the majority of variables in the data set and then remove the non-significant predictors. Their removal is justified by the large p-value in the ANOVA test.
 
-The near zero p-value associated with the regression suggests that there is indeed a relationship between the predictors and return_yards. However, a Multiple R-squared value of 0.1262 implies that there remains a large amount of variance in the data that is unaccounted for by the regression. In other words, the predictors certainly tell part of the story but not all of it.
+The near zero p-value associated with the regression suggests that there is indeed a relationship between the predictors and return_yards. However, a Multiple R-squared value of 0.1262 implies that there remains a large amount of variance in the data that is unaccounted for by the regression. In other words, the predictors only tell part of the story.
 
 Note that kick_width_neg is a transformation of the kick_width data field which changes the data to a (-26,26) scale to make it more usable for regression.
 
@@ -71,7 +71,7 @@ plot(puntPenalty$field_position_pos, puntPenalty$vise_count, xlab = "Field Posit
 abline(lmodVise)
 ```
 
-Having vise_count as a predictor in our model could be considered cumbersome and unintuitive. Thus, in the above code we check to see if vise_count is strongly correlated with field_position_pos and whether this correlation means that we can drop vise_count from the regression. We see that there is indeed a correlation between the two variables. However, in code not shown here, it was revealed that dropping vise_count from the regression would nonetheless significantly reduce the model's effectiveness at predicting return_yards.
+Having vise_count as a predictor in our model could be considered cumbersome and unintuitive. Thus in the above code we check to see if vise_count is strongly correlated with field_position_pos and whether this correlation means that we can drop vise_count from the regression. We see that there is indeed a correlation between the two variables. However, in code not shown here, it was revealed that dropping vise_count from the regression would nonetheless significantly reduce the model's effectiveness at predicting return_yards.
 
 We now turn to checking the validity of the assumptions inherent to all linear regression. Namely, that the residuals have constant variance, are normally distributed, and the observations are not correlated.
 
@@ -82,7 +82,7 @@ plot(fitted(lmod), residuals(lmod), xlab = "Fitted yhat Values", ylab = "Residua
 var.test(residuals(lmod)[fitted(lmod)>10], residuals(lmod)[fitted(lmod) < 10])
 ```
 
-Here we check if the residuals have non-constant variance. we find that they do and we will attempt to address this through remidial measures later.
+Here we check if the residuals have non-constant variance. We find that they do and we will attempt to address this through remedial measures later.
 
 ```{r}
 qqnorm(residuals(lmod), ylab="Residuals", main="")
@@ -90,7 +90,7 @@ qqline(residuals(lmod))
 shapiro.test(residuals(lmod))
 ```
 
-Here we check if the residuals are normally distributed but they are clearly not. Again we will attempt to address this later through remidial measures.
+Here we check if the residuals are normally distributed, but they are clearly not. Again we will attempt to address this later through remedial measures.
 
 ```{r}
 n<-length(residuals(lmod))
@@ -182,7 +182,7 @@ influential <- dfbeta(lmod)[,10]
 influential[which.max(abs(influential))]
 ```
 
-Above we take a more granular look at influential points by graphing the change each point has on each coefficient individually. We see that that the inclusion of punt number 1581 and 2107 result in relatively large difference in each coefficient so we can improve the model significantly by removing them which we do below.
+Above we take a more granular look at influential points by graphing the change each point has on each coefficient individually. We see that the inclusion of punt number 1581 and 2107 result in relatively large difference in each coefficient so we can improve the model significantly by removing them which we do below.
 
 ```{r}
 lmodu<-lm(return_yards ~ clean_catch_binary + actual_kick_direction_R + actual_kick_direction_C + return_direction_R + return_direction_C + kick_width_neg + hang_time + kick_depth + vise_count, puntNoPenalty, subset=(row.names(puntNoPenalty)!="2107" & row.names(puntNoPenalty)!="1581"))
@@ -200,7 +200,7 @@ plot(fitted(lmodu), residuals(lmodu), xlab = "Fitted yhat Values", ylab = "Resid
 var.test(residuals(lmodu)[fitted(lmod)>0.045], residuals(lmodu)[fitted(lmod) < 0.045])
 ```
 
-Above we apply a transformation to the response variable return_yards. Namely, we now regress on 1/(return_yards+15) where we add 15 to translate the data so that all punt_returns are in positive yardage. The minimum return_yards was -14 so adding 15 is sufficient. This transformation eliminates the non-constant variance of the residuals which we detected previously. On one hand the improves the fit, but also makes the model less intuitive. The value of this tradeoff is left to the discretion of the model user.
+Above we apply a transformation to the response variable return_yards. Namely, we now regress on 1/(return_yards+15) where we add 15 to translate the data so that all punt_returns are in positive yardage. The minimum return_yards was -14 so adding 15 is sufficient. This transformation eliminates the non-constant variance of the residuals which we detected previously. On one hand it improves the fit, but also makes the model less intuitive. The value of this trade-off is left to the discretion of the model user.
 
 ```{r}
 qqnorm(residuals(lmodu), ylab="Residuals", main="")
@@ -217,7 +217,7 @@ library(lmtest)
 dwtest(return_yards ~ hang_time + kick_depth + kick_yards + vise_count + field_position_pos, data=puntNoPenalty)
 ```
 
-Lastly, we again check if the observations remain uncorrelated and indeed that is the case.
+Lastly, we again check if the observations remain uncorrelated and that proves to be the case.
 
 Future Directions: Using this model to grade punt returners. Summing a returner's residuals could serve as an alternative metric to average return yards.
 
@@ -233,7 +233,7 @@ ggplot(puntNoPenalty, aes(x = residuals)) +
   facet_wrap(offense_team_id ~ .)
 ```
 
-We now look at the residuals for each team's offensive unit. If one team in particular had a devised a strategy which allowed them to consistently outperform the model we would expect the corresponding histogram to be skewed left. However, this is not the case as all the histograms are approximately normally distributed. This observation is confirmed via the scatterplot for each team's mean residual below.
+We now look at the residuals for each team's offensive unit. If one team in particular had a devised a strategy which allowed them to consistently outperform the model we would expect the corresponding histogram to be skewed left. However this is not the case as all the histograms are approximately normally distributed. This observation is confirmed via the scatterplot for each team's mean residual below.
 ```{r}
 mean <- tapply(puntNoPenalty$residuals, puntNoPenalty$offense_team_id, mean)
 plot(mean)
@@ -262,7 +262,7 @@ anova(finalLmodAll, lmodAll)
 lmod <- finalLmodAll
 ```
 
-After the reducing the model to only the significant predictors we are left with our final model labeled finalLmodAll above. Below we check the validity of our inherent assumptions reharding linear regression and remove influential points/outliers just as we had previously done.
+After the reducing the model to only the significant predictors we are left with our final model labeled finalLmodAll above. Below we check the validity of our inherent assumptions regarding linear regression and remove influential points/outliers just as we had previously done.
 
 ```{r}
 plot(fitted(lmod), residuals(lmod), xlab = "Fitted yhat Values", ylab = "Residuals")
@@ -362,7 +362,7 @@ summary(finalLmodAllu)
 lmodu<-finalLmodAllu
 ```
 
-We then perform a transformation similar to the ones we had already done. With the new tranformation we check out assumptions again, just as we had done previously.
+We then perform a transformation similar to the ones we had already done. With the new transformation we check out assumptions again, just as we had done previously.
 
 ```{r}
 
@@ -386,7 +386,7 @@ puntOrig<-subset(puntOrig, (!is.na(residuals)) & (!is.na(defense_team_id)))
 
 ```
 
-We now look at the same sets of histograms but this time with the combined penalty/no penalty model and reach the same conclusions. No team performs significantly better or worse then others on punt returns in the NFL.
+We now look at the same sets of histograms, but this time with the combined penalty/no penalty model and reach the same conclusions. No team performs significantly better or worse then others on punt returns in the NFL.
 
 ```{r}
 ggplot(puntOrig, aes(x = residuals)) +
